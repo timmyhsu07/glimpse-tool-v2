@@ -8,7 +8,12 @@ stays near a gigabyte on disk and runs on Apple silicon. Install it with
 A summary is kept only when it stays inside the wording of the result. An
 answer is kept only when every number in it already appears in the result or
 the question, and it does not give medical advice.
+
+Without the model (as on the hosted site) a summary is the result's own wording,
+and a question is answered from a few fixed explanations plus the result's
+sentences on that topic.
 """
+import importlib.util
 import os
 import re
 import threading
@@ -43,24 +48,84 @@ _lock = threading.RLock()
 _bundle = None
 
 
+def available():
+    """True when the summary model's library is installed here."""
+    return importlib.util.find_spec("mlx_lm") is not None
+
+
 def summarize(text, question=""):
-    """Return ``{"summary", "model"}``. ``model`` is null when the draft was dropped.
+    """Return ``{"summary", "model", "source"}``.
 
     With no question, copy a short summary of ``text``. With a question, answer
-    it from ``text``.
+    it from ``text``. ``source`` is "model" (written by the model), "dropped"
+    (the model's draft strayed, so the result's wording is used), "page" (no
+    model: the result's wording) or "built-in" (no model: a fixed explanation).
     """
     text = " ".join(str(text).split())
     if len(text) > 1800:
         text = text[:1800].rsplit(" ", 1)[0]
     question = " ".join(str(question or "").split())
+    if not available():
+        if question:
+            return {"summary": explain(text, question), "model": None, "source": "built-in"}
+        return {"summary": text, "model": None, "source": "page"}
     draft = _two_sentences(_generate(text, question))
     if question:
         if not _answer_ok(draft, text, question):
-            return {"summary": _REFUSAL, "model": None}
-        return {"summary": draft, "model": MODEL_ID}
+            return {"summary": _REFUSAL, "model": None, "source": "dropped"}
+        return {"summary": draft, "model": MODEL_ID, "source": "model"}
     if not _usable(draft, text):
-        return {"summary": text, "model": None}
-    return {"summary": draft, "model": MODEL_ID}
+        return {"summary": text, "model": None, "source": "dropped"}
+    return {"summary": draft, "model": MODEL_ID, "source": "model"}
+
+
+# Fixed explanations for questions without the model: (words in the question,
+# what the result means, words that pick the result's sentences on that topic).
+_TOPICS = (
+    # first, so a question asking for advice gets this answer even when it names a topic
+    (("diagnos", "doctor", "medic", "treat", "insulin", "drug", "pill", "diet", "should i",
+      "trust", "accura", "reliab", "advice"),
+     "GLIMPSE is a research demo. Its models were trained on one public dataset, so a "
+     "result is not a diagnosis, a guarantee, or advice. Please ask a professional.",
+     ()),
+    (("range", "uncertain", "band", "other model", "other good", "disagree", "agree",
+      "sure", "confiden", "close call"),
+     "The range is what other models that fit the data about as well would say. "
+     "A narrow range means they agree; if it crosses 50%, they disagree about the prediction.",
+     ("range from", "agree", "close call")),
+    (("chance", "percent", "%", "probab", "likely", "risk", "score"),
+     "The chance is the model’s estimate for people with these values in its training "
+     "data. It is not a measured risk for any one person.",
+     ("chance",)),
+    (("change", "flip", "improve", "lower", "reduce", "smallest", "what can"),
+     "A suggested change is a set of values that would flip the model’s prediction. It "
+     "describes how the model behaves, not what would happen in real life.",
+     ("change",)),
+    (("why", "drove", "driver", "push", "important", "factor", "cause", "reason"),
+     "These are the values that move the simple model’s score most, compared with an "
+     "average person in the data. They explain the model, not the cause of an outcome.",
+     ("push",)),
+    (("simple", "flexible", "neural", "linear", "which model", "two model"),
+     "The simple model is a straight-line model. The flexible one is a small neural network "
+     "that can bend around the data. Showing both makes it easier to see when the answer "
+     "depends on the model.",
+     ("simple model", "flexible model")),
+)
+_NO_TOPIC = ("That can’t be answered from this page. Try asking what the range means, "
+             "what the chance means, what drove the result, or what the suggested change is.")
+
+
+def explain(text, question):
+    """Answer ``question`` from a fixed explanation and the result's own sentences."""
+    q = question.lower()
+    scores = [sum(w in q for w in words) for words, _, _ in _TOPICS]
+    i = scores.index(max(scores))                     # ties go to the earlier topic
+    if not scores[i]:
+        return _NO_TOPIC
+    _, meaning, picks = _TOPICS[i]
+    found = [s for s in re.split(r"(?<=[.!?])\s+", text)
+             if any(p in s.lower() for p in picks)][:2]
+    return " ".join([meaning, *found])
 
 
 def _generate(text, question=""):

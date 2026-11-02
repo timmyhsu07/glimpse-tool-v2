@@ -39,6 +39,12 @@ MONOTONE = {
     "taiwan": {"x5": "up"},                      # age
 }
 
+# Values that must be above zero, not just at least zero. In Pima a stored 0 means
+# "not measured", so nobody really has it.
+POSITIVE = {
+    "pima": {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"},
+}
+
 _MODELS = {}
 _LENSES = {}
 _VIEWS = {}
@@ -105,10 +111,45 @@ def _actions(dataset_key, m):
     immutable = IMMUTABLE.get(dataset_key, set()) & set(names)
     monotone = {n: r for n, r in MONOTONE.get(dataset_key, {}).items()
                 if n in names and n not in immutable}
-    features = [dict(f, immutable=f["name"] in immutable, monotone=monotone.get(f["name"]))
+    features = [dict(f, immutable=f["name"] in immutable, monotone=monotone.get(f["name"]),
+                     **_possible(dataset_key, f))
                 for f in m["features"]]
     return dict(immutable=immutable, monotone=monotone, features=features,
                 fixed=np.array([n in immutable for n in names], dtype=bool))
+
+
+def _possible(dataset_key, f):
+    """The values a real person can have, as opposed to the ones seen in the data:
+    nothing negative when the data has no negatives, percentages up to 100, whole
+    counts, and 0 or 1 for a one-hot column."""
+    if f.get("group"):
+        return {"possible_min": 0.0, "possible_max": 1.0, "above_min": False, "whole": True}
+    return {"possible_min": 0.0 if f["min"] >= -1e-6 else None,
+            "possible_max": 100.0 if f.get("unit") == "%" else None,
+            "above_min": f["name"] in POSITIVE.get(dataset_key, ()),
+            "whole": f.get("unit") in ("count", "code")}
+
+
+def impossible_values(dataset_key, custom, eps=0.03):
+    """Entered values no real person could have: [{name, label, value, reason}]."""
+    setup = _setup(dataset_key, float(np.clip(eps, 0.005, 0.2)))
+    out = []
+    for f in setup["features"]:
+        v = custom.get(f["name"])
+        if v is None or v == "":
+            continue
+        v, lo, hi = float(v), f["possible_min"], f["possible_max"]
+        # small slack: values read back from the data carry float32 noise
+        if lo is not None and (v <= lo if f["above_min"] else v < lo - 1e-6):
+            reason = f"must be more than {lo:g}" if f["above_min"] else f"can’t be below {lo:g}"
+        elif hi is not None and v > hi:
+            reason = f"can’t be above {hi:g}"
+        elif f["whole"] and abs(v - round(v)) > 1e-4:
+            reason = "must be a whole number"
+        else:
+            continue
+        out.append({"name": f["name"], "label": f["label"], "value": v, "reason": reason})
+    return out
 
 
 def _setup(dataset_key, eps, kind=None):
@@ -811,8 +852,12 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=Non
         x0, provided = _custom_x0(setup, custom)
         x0_2d = lens.embed(x0)[0]
         pred = int(_sigmoid(float(setup["lin"].logit(x0)[0])) > 0.5)
+        real = data.to_real(x0)
         query = {"id": None, "custom": True,
-                 "x": float(x0_2d[0]), "y": float(x0_2d[1]), "outcome": pred}
+                 "x": float(x0_2d[0]), "y": float(x0_2d[1]), "outcome": pred,
+                 # entered values the models never saw anything like
+                 "outside": [f["label"] for f, v, ok in zip(setup["features"], real, provided)
+                             if ok and not f["min"] - 1e-6 <= v <= f["max"] + 1e-6]}
     else:
         if query_id is None or not (0 <= int(query_id) < data.n):
             query_id = _pick_query(setup)

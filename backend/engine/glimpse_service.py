@@ -43,6 +43,11 @@ def decode(dataset, point, eps=EPS, plane=None, lens=None):
     return cf_core.decode_point(dataset, point, eps=eps, plane=plane, lens=lens)
 
 
+def impossible(dataset, custom, eps=EPS):
+    _ensure(dataset, eps)
+    return cf_core.impossible_values(dataset, custom, eps=eps)
+
+
 def lens_report(dataset, eps=EPS):
     _ensure(dataset, eps)
     return cf_core.lens_report(dataset, eps=eps)

@@ -5,7 +5,7 @@ const qs = new URLSearchParams(location.search);
 
 let topic = qs.get("dataset") || "pima";
 let saves = [];                 // this topic's saves (signed in only)
-let fromLink = null;            // values passed in ?you=
+let fromLink = null;            // values passed from the map or details page
 let showSame = false;
 
 function fmt(v, integer) {
@@ -27,10 +27,31 @@ function parseYou(raw) {
   return Object.keys(out).length ? out : null;
 }
 
+// The values handed over in this tab (?you=tab), or from an older link with the values in
+// the address, which are then taken out of it.
+function takeYou() {
+  const raw = qs.get("you");
+  if (raw === "tab") {
+    try {
+      const h = JSON.parse(sessionStorage.getItem("glimpse-you") || "null");
+      return h && h.dataset === topic ? h.values : null;
+    } catch (e) { return null; }
+  }
+  const vals = parseYou(raw);
+  if (vals) {
+    qs.set("you", "tab");
+    try {
+      sessionStorage.setItem("glimpse-you", JSON.stringify({ dataset: topic, values: vals }));
+      history.replaceState(null, "", `${location.pathname}?${qs}`);
+    } catch (e) {}
+  }
+  return vals;
+}
+
 // Every choice for the two pickers: { key, label, values }.
 function choices() {
   const list = [];
-  if (fromLink) list.push({ key: "you", label: "From the map", values: fromLink });
+  if (fromLink) list.push({ key: "you", label: "Your values", values: fromLink });
   for (const s of saves) list.push({ key: "save:" + s.id, label: `${s.name} · ${day(s.updated_at)}`, values: s.values });
   list.push({ key: "typical", label: "A typical person", values: {} });
   return list;
@@ -160,7 +181,7 @@ el("cmp-topic").addEventListener("change", async (e) => {
 async function init() {
   el("cmp-values-tip").innerHTML = G.tip("Changed values first, most important at the top. " +
     "A lock means it can’t be changed.");
-  fromLink = parseYou(qs.get("you"));
+  fromLink = takeYou();
   let datasets = [];
   try { datasets = (await (await fetch("/api/datasets")).json()).datasets; } catch (e) {}
   if (!datasets.some((d) => d.key === topic) && datasets.length) topic = datasets[0].key;

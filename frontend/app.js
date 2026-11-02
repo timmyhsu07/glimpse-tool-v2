@@ -2,7 +2,7 @@
 
 const G = window.GLIMPSE;
 const state = { dataset: "pima", query: null, custom: null, point: null, plane: null,
-                rules: {}, view: "everyone", lens: null };
+                rules: {}, view: "everyone", lens: null, fromMap: false };
 const RULES_KEY = "glimpse-rules:";
 
 // The map page and the details page share this script. A section a page doesn't have
@@ -124,7 +124,7 @@ function buildPanelTraces(scene, which) {
 
   const q = scene.query, cf = panel.cfs;
   const qName = q.from_map ? "Person at this spot"
-              : q.custom ? "You" : `Person #${q.id}`;
+              : q.custom ? "Your values" : `Sample person #${q.id}`;
   traces.push({
     type: "scatter", mode: "markers", x: [q.x], y: [q.y],
     marker: { size: q.custom ? 17 : 15, color: P.you,
@@ -155,7 +155,7 @@ const kindOk = (scene, which, kind) =>
   ({ safe: safeOk, sparse: sparseOk }[kind] || quickOk)(scene, which);
 // The per-value column for a kind: "linear" (safe), "linear_quick", "linear_sparse".
 const kindKey = (which, kind) => (kind === "safe" ? which : `${which}_${kind}`);
-const KIND_NAME = { quick: "Smallest change", sparse: "Fewest changes", safe: "Safest change" };
+const KIND_NAME = { quick: "Smallest change", sparse: "Fewest changes", safe: "Holds across models" };
 // Where the map's arrow points: the safe change if there is one, else the quick one,
 // else nowhere.
 const arrowTarget = (scene, which) =>
@@ -481,28 +481,63 @@ function renderLegend(scene) {
     `<li><span class="sw line" style="background:${P.line}"></span> Model’s line</li>`,
     `<li><span class="sw line" style="background:${P.fan}"></span> Other good models</li>`,
     `<li><span class="sw line dash" style="color:${P.worst}"></span> Strictest model (dashed)</li>`,
-    `<li>★ You · ✕ Smallest change · ◆ Fewest changes · ▪ Safest change</li>`,
+    `<li>★ This person · ✕ Smallest change · ◆ Fewest changes · ▪ Holds across models</li>`,
     `<li>${G.tip("Background: the simple model’s chance of " + b + ". " +
       "Line: where it flips. Other good models: models that fit the data about as well. " +
-      "Strictest: the good model hardest to convince at the safest change (the ▪ sits just " +
+      "Strictest: the good model hardest to convince at the ▪ change (the ▪ sits just " +
       "past its line). Smallest change: least total change for this " +
-      "model. Fewest changes: touches as few values as possible. Safest change: works for " +
-      "every good model.")}</li>`,
+      "model. Fewest changes: touches as few values as possible. Holds across models: " +
+      "flips every good model. All of these are changes to the numbers the models see, " +
+      "not advice.")}</li>`,
     `<li><a href="/tutorial.html#map">How to read the map</a></li>`,
   ].join("");
 }
 
+// Whose numbers these are: a real record from the data, values someone typed, or a
+// spot on the map.
+function whoLine(q) {
+  if (q.from_map) return "A spot on the map · an estimated person, not a real record";
+  if (q.custom) return "Your entered values";
+  return `Sample person #${q.id} · a real record from the data`;
+}
+
+// What went in: how many values were typed vs filled in, and which typed ones the
+// models never saw anything like.
+function inputsNote(scene) {
+  const q = scene.query;
+  if (q.from_map)
+    return q.impossible && q.impossible.length
+      ? `<span class="warn">No real person has these values: ${q.impossible.map(G.esc).join(", ")}.</span>`
+      : "";
+  if (!q.custom) return "";
+  const items = displayRows(scene);
+  const typed = items.filter((it) => !(it.kind === "group" ? it.missing : it.r.missing)).length;
+  const filled = items.length - typed;
+  let note = `You entered ${typed} of ${items.length} values.` +
+    (filled ? ` The other ${filled} use typical values (✱ in the details).` : "");
+  if (q.outside && q.outside.length)
+    note += ` <span class="warn">Outside what the models learned from: ` +
+      `${q.outside.map(G.esc).join(", ")}. Treat this result with extra caution.</span>`;
+  return note;
+}
+
 function renderVerdict(scene) {
   const q = scene.query;
-  el("verdict-who").textContent =
-    q.from_map ? "Person at this spot" : q.custom ? "You" : `Person #${q.id}`;
+  el("verdict-who").textContent = whoLine(q);
   const [goodName, badName] = scene.class_names;
   const lm = scene.panels.linear.metrics;
   const predName = lm.pred_bad ? badName : goodName;
   el("verdict").className = lm.pred_bad ? "bad" : "good";
+  const topic = G.TOPICS[state.dataset] || {};
+  el("verdict-inputs").innerHTML = inputsNote(scene);
+  el("verdict-inputs").hidden = !el("verdict-inputs").innerHTML;
+  el("verdict-limits").innerHTML = `Research demo: a prediction from models trained on ` +
+    `${G.esc(topic.source || "one public dataset")}. ${G.esc(topic.limit || "Not advice.")} ` +
+    `<a href="/tutorial.html#limits">Limits</a>`;
 
   const close = lm.p_bad_best_x0 < 0.5 && lm.p_bad_worst_x0 > 0.5;
   el("verdict-headline").innerHTML =
+    `<span class="vlead">Model prediction</span>` +
     `<span class="vhead">${G.esc(predName)}</span>` +
     `<span class="badge ${close ? "close" : "clear"}">` +
     `${close ? "⚠ Close call · models disagree" : "✓ Clear · models agree"}</span>`;
@@ -516,7 +551,7 @@ function renderVerdict(scene) {
     const erm = Math.round(m.p_bad_erm_x0 * 100);
     const side = m.pred_bad ? badName : goodName;
     return `<div class="vmodel ${m.pred_bad ? "bad" : "good"}">
-      <div class="vlabel">${name}</div>
+      <div class="vlabel">${name} predicts</div>
       <div class="vpred">${G.esc(side)}</div>
       <div class="vrange"><b class="vchance">${erm}%</b> chance of ${G.esc(badName)}
         ${G.tip(`The dot is the best guess. The shaded band is what other models that ` +
@@ -527,9 +562,23 @@ function renderVerdict(scene) {
   }).join("");
 }
 
-// ---- plain-language summary, written on demand by a small Hugging Face model
+// ---- plain-language summary, written on demand by a small Hugging Face model. Where
+// the model isn't installed (the hosted site), the server answers from the page's own
+// wording and a few fixed explanations, and the page says so up front.
 
 let summarySeq = 0;
+let summaryAI = null;          // null until known; false: built-in answers only
+
+async function checkSummaryAI() {
+  const note = document.getElementById("ask-note");
+  if (!note) return;
+  try { summaryAI = (await (await fetch("/api/summarize")).json()).ai === true; }
+  catch (e) { summaryAI = false; }
+  note.textContent = summaryAI
+    ? "Answers are written by a small AI model from the numbers on this page."
+    : "The AI model isn’t available on this site, so answers come from GLIMPSE’s built-in " +
+      "explanations and the numbers on this page.";
+}
 
 function clearSummary() {
   summarySeq++;
@@ -557,7 +606,8 @@ function startTurn(question) {
   }
   const answer = document.createElement("p");
   answer.className = "summary-text";
-  answer.textContent = "Loading a small model. The first time can take a minute.";
+  answer.textContent = summaryAI === false ? "…"
+    : "Loading a small model. The first time can take a minute.";
   const note = document.createElement("p");
   note.className = "sub";
   note.hidden = true;
@@ -578,7 +628,8 @@ function setAskBusy(busy, label) {
 function resultBrief(scene) {
   const [goodName, badName] = scene.class_names;
   const q = scene.query;
-  const who = q.from_map ? "The person at this spot" : q.custom ? "You" : `Person ${q.id}`;
+  const who = q.from_map ? "An estimated person at this map spot"
+            : q.custom ? "Your entered values" : `Sample person ${q.id}`;
   const models = ["linear", "mlp"].map((which) => {
     const m = scene.panels[which].metrics;
     const name = which === "linear" ? "The simple model" : "The flexible model";
@@ -586,8 +637,8 @@ function resultBrief(scene) {
     const chance = Math.round(m.p_bad_erm_x0 * 100);
     const lo = Math.round(m.p_bad_best_x0 * 100);
     const hi = Math.round(m.p_bad_worst_x0 * 100);
-    return `${name} says ${side}, with a ${chance}% chance of ${badName}. ` +
-      `Other good models range from ${lo}% to ${hi}%.`;
+    return `${name} predicts ${side}, with a ${chance}% chance of ${badName}; ` +
+      `other good models of its kind range from ${lo}% to ${hi}%.`;
   }).join(" ");
   const lm = scene.panels.linear.metrics;
   const close = lm.p_bad_best_x0 < 0.5 && lm.p_bad_worst_x0 > 0.5;
@@ -600,12 +651,13 @@ function resultBrief(scene) {
     ? ` The values that push the simple model most are ${drivers.join(", ")}.` : "";
   let change = "";
   if (!lm.pred_bad)
-    change = ` Nothing needs to change to stay on the ${goodName} side.`;
+    change = ` The simple model already predicts ${goodName}.`;
   else if (kindOk(scene, "linear", "quick")) {
     const bits = topChanges(scene, "linear", "quick", 3).map((c) =>
       `${c.label} from ${c.before} to ${c.after}${c.unit ? " " + c.unit : ""}`);
     if (bits.length)
-      change = " The smallest change for the simple model would move " + bits.join(", ") + ".";
+      change = " The smallest change that would flip the simple model moves " + bits.join(", ") +
+        ". That describes the model, not advice.";
   }
   return `${who}. ${models} ${agree}${drove}${change}`;
 }
@@ -628,9 +680,12 @@ async function askModel(question) {
     if (!resp.ok) throw new Error(body.error || "request failed");
     turn.answer.textContent = body.summary;
     turn.note.hidden = false;
-    turn.note.textContent = body.model
-      ? `Written by ${body.model}. Research summary only.`
-      : "Left out because it did not stay with the numbers on this page.";
+    turn.note.textContent = {
+      model: `Written by ${body.model}. Research summary only.`,
+      page: "Taken from the numbers on this page.",
+      "built-in": "A built-in explanation, not written by an AI model.",
+    }[body.source] || "The model’s answer was left out because it did not stay with the " +
+      "numbers on this page.";
     if (question) {
       const input = document.getElementById("ask-input");
       if (input) input.value = "";
@@ -686,10 +741,11 @@ el("compare-more").addEventListener("click", () => {
   if (lastScene) renderCompare(lastScene);
 });
 
-// ---- what would change it: quickest / safest tabs, change cards, what-if, plan
+// ---- what would change it: smallest / fewest / holds-across-models tabs, change cards,
+// what-if, plan
 
 let recoKind = "quick";     // "quick" smallest / "sparse" fewest values: this model; "safe": every good model
-const EASY_SHIFT = 20;                 // rank points; a smaller move counts as "easy"
+const SMALL_SHIFT = 20;     // percentile points; a smaller move among people is a "small shift"
 
 // The top changes for one model: [{row or group, before, after, unit, shift}].
 function topChanges(scene, which, kind, n) {
@@ -718,13 +774,23 @@ function topChanges(scene, which, kind, n) {
   return items.sort((a, b) => b.mag - a.mag).slice(0, n);
 }
 
+// How far a change moves the value among the people in the data. It says nothing about
+// how hard the change is, or whether a person can make it.
+function shiftBadge(c) {
+  if (c.group) return "";
+  const n = Math.round(c.shift), small = c.shift <= SMALL_SHIFT;
+  const what = `Moves this value past ${n}% of the people in the data. This measures ` +
+    `how unusual the new value is, not how hard it is to change or whether it can be changed.`;
+  return `<span class="effort ${small ? "easy" : "hard"}" title="${G.esc(what)}">` +
+    `${small ? "small shift" : "large shift"}<span class="sr-only">: ${G.esc(what)}</span></span>`;
+}
+
 function changeCard(c) {
-  const easy = c.shift <= EASY_SHIFT;
   const arrow = c.group ? "→" : c.up ? "▲" : "▼";
   return `<li class="chg-card">
     <div class="chg-top"><span class="chg-arrow ${c.group ? "" : c.up ? "up" : "down"}"
       aria-hidden="true">${arrow}</span><b>${G.esc(c.label)}</b>
-      <span class="effort ${easy ? "easy" : "hard"}">${easy ? "easy" : "harder"}</span></div>
+      ${shiftBadge(c)}</div>
     <div class="chg-vals">${G.esc(c.before)} → <b>${G.esc(c.after)}</b>
       ${c.unit ? `<span class="sub">${G.esc(c.unit)}</span>` : ""}</div></li>`;
 }
@@ -740,11 +806,11 @@ function renderRecommend(scene) {
     const name = which === "linear" ? "Simple model" : "Flexible model";
     if (!m.pred_bad)
       return `<div class="reco-col"><div class="reco-h">${name}</div>
-        <p class="reco-ok">✓ Already ${G.esc(goodName)}. Nothing to change.</p></div>`;
+        <p class="reco-ok">✓ This model already predicts ${G.esc(goodName)}.</p></div>`;
     if (!kindOk(scene, which, recoKind))
       return `<div class="reco-col"><div class="reco-h">${name}</div>
         <p class="reco-none">${recoKind === "safe"
-          ? `No change you can make works for every good model.
+          ? `No change within the allowed values flips every good model.
              <button type="button" class="link-btn" data-kind="quick">See the smallest change</button>`
           : "No change within realistic values flips this model."}</p></div>`;
     const cards = topChanges(scene, which, recoKind, 3);
@@ -773,16 +839,16 @@ function renderWays(scene) {
   for (const b of el("ways-toggle").querySelectorAll("button"))
     b.setAttribute("aria-pressed", String(b.dataset.model === which));
   if (!m.pred_bad) {
-    el("ways-list").innerHTML = `<li class="way-ok">✓ Already ${G.esc(goodName)}. ` +
-      `Nothing needs to change.</li>`;
+    el("ways-list").innerHTML = `<li class="way-ok">✓ This model already predicts ` +
+      `${G.esc(goodName)}.</li>`;
     return;
   }
   const values = (n) => `${n} value${n === 1 ? "" : "s"}`;
   const ways = [
     { kind: "quick", icon: "✕", what: (n) => `Least total change · ${values(n)}`, after: m.p_bad_quick },
     { kind: "sparse", icon: "◆", what: (n) => `Changes only ${values(n)}` +
-        (m.sparse_safe ? " · works for every good model" : ""), after: m.p_bad_sparse },
-    { kind: "safe", icon: "▪", what: (n) => `Works for every good model · ${values(n)}`,
+        (m.sparse_safe ? " · also flips every good model" : ""), after: m.p_bad_sparse },
+    { kind: "safe", icon: "▪", what: (n) => `Flips every good model, not just this one · ${values(n)}`,
       after: m.p_bad_erm_cf },
   ];
   el("ways-list").innerHTML = ways.map((w) => {
@@ -808,9 +874,9 @@ el("ways-toggle").addEventListener("click", (e) => {
   renderWays(lastScene);
 });
 el("ways-tip").innerHTML = G.tip("Smallest: the least total change. Fewest changes: touches as " +
-  "few values as possible. Safest: works for every model that fits the data about as well. " +
-  "The % is the model's chance after the change. Values you can't change are never touched.",
-  "right");
+  "few values as possible. Holds across models: flips every model that fits the data about as " +
+  "well. The % is the model's chance after the change. Values you can't change are never " +
+  "touched. These describe the models, not what would happen in real life.", "right");
 
 // ---- what drove it: how much each value pushes this prediction, compared with an
 // average person, with the range across the good models
@@ -933,7 +999,8 @@ function personValues(scene) {
 async function predict(values) {
   const resp = await fetch("/api/people", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataset: state.dataset, people: [values], lens: state.lens }),
+    body: JSON.stringify({ dataset: state.dataset, people: [values], lens: state.lens,
+                           from_map: state.fromMap }),
   });
   const body = await resp.json();
   if (!resp.ok) throw new Error(body.error || "prediction failed");
@@ -1028,7 +1095,7 @@ async function runWhatif() {
       { p: before.p_bad_erm_x0 }, person.linear);
     moveGhost(person);
   } catch (e) {
-    el("whatif-result").textContent = "Couldn’t update. Try again.";
+    el("whatif-result").textContent = e.message || "Couldn’t update. Try again.";
   }
 }
 
@@ -1062,6 +1129,7 @@ el("whatif-apply").addEventListener("click", () => {
   if (!whatifValues) return;
   state.custom = { ...whatifValues };
   state.point = null;
+  state.fromMap = false;
   restoreForm();
   refresh();
 });
@@ -1085,7 +1153,7 @@ function renderPlan(scene) {
       <span><b>${G.esc(c.label)}</b> ${G.esc(c.before)} → <b>${G.esc(c.after)}</b>
       ${c.unit ? G.esc(c.unit) : ""}</span></label></li>`;
   }).join("") : `<li class="sub">${noSafe ? (recoKind === "safe"
-    ? "No safe change exists for the simple model. Switch to Smallest change to plan."
+    ? "No change holds across models for the simple model. Switch to Smallest change to plan."
     : "No realistic change flips the simple model.")
     : "Nothing to plan: already " + G.esc(scene.class_names[0]) + "."}</li>`;
   el("plan-list").dataset.items = JSON.stringify(items);
@@ -1148,17 +1216,26 @@ el("plan-save").addEventListener("click", async () => {
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) { el("plan-msg").textContent = body.error || "Couldn’t save the plan."; return; }
   el("plan-msg").textContent = `Saved “${body.saved.name}”.`;
-  const now = encodeYou(personValues(lastScene));
   el("plan-compare").href = `/compare.html?dataset=${encodeURIComponent(state.dataset)}` +
-    `&you=${now}&b=${body.saved.id}`;
+    `&you=${handoff(lastScene)}&b=${body.saved.id}`;
   el("plan-compare").hidden = false;
   refreshSaved();
 });
 
-// Values as "name:value,..." for links (the same format ?you= reads).
-function encodeYou(values) {
-  return encodeURIComponent(Object.entries(values)
-    .filter(([, v]) => v != null).map(([k, v]) => `${k}:${+Number(v).toFixed(4)}`).join(","));
+// Entered values go to the next page through this tab's own storage, never the address,
+// so they stay out of browser history and copied links. The link says ?you=tab.
+const HANDOFF_KEY = "glimpse-you";
+function handoff(scene) {
+  // Typed values go as typed, so blanks stay blanks (and are counted as filled in).
+  const values = scene.query.custom && state.custom ? state.custom : personValues(scene);
+  try {
+    sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({
+      dataset: state.dataset, values, fromMap: !!scene.query.from_map }));
+  } catch (e) {}
+  return "tab";
+}
+function takeHandoff() {
+  try { return JSON.parse(sessionStorage.getItem(HANDOFF_KEY) || "null"); } catch (e) { return null; }
 }
 
 // Build rows for the counterfactual comparison.
@@ -1309,13 +1386,17 @@ function fieldHTML(f) {
     ? ` <span class="imm-tag" title="Can’t change, so never recommended">${G.LOCK}</span>`
     : ONE_WAY[f.monotone] || "";
   const hint = f.desc ? " " + G.tip(f.desc) : "";
+  const warnId = "warn-" + f.name.replace(/[^\w-]/g, "_");
   return `<label class="you-row" data-min="${f.min}" data-max="${f.max}"
                  data-p5="${f.p5}" data-p95="${f.p95}"
-                 data-median="${f.median}" data-int="${f.integer}">
+                 data-median="${f.median}" data-int="${f.integer}"
+                 data-pmin="${f.possible_min ?? ""}" data-pmax="${f.possible_max ?? ""}"
+                 data-above="${!!f.above_min}" data-whole="${!!f.whole}">
     <span class="fname">${f.label}${unit}${imm}${hint}</span>
     <input type="number" step="${f.integer ? 1 : "any"}" name="${f.name}"
+           aria-label="${G.esc(f.label + (f.unit ? ` (${f.unit})` : ""))}" aria-describedby="${warnId}"
            placeholder="${fmtVal(f.median, f.integer)} typical">
-    <span class="fwarn"></span>
+    <span class="fwarn" id="${warnId}" aria-live="polite"></span>
   </label>`;
 }
 
@@ -1374,15 +1455,34 @@ function restoreForm() {
   el("you-details").open = true;
 }
 
+// Why no real person could have this value, or "". The server checks the same rules.
+function impossibleReason(v, row) {
+  const d = row.dataset;
+  const lo = d.pmin === "" ? null : Number(d.pmin), hi = d.pmax === "" ? null : Number(d.pmax);
+  if (lo != null && (d.above === "true" ? v <= lo : v < lo - 1e-6))
+    return d.above === "true" ? `must be more than ${lo}` : `can’t be below ${lo}`;
+  if (hi != null && v > hi) return `can’t be above ${hi}`;
+  if (d.whole === "true" && Math.abs(v - Math.round(v)) > 1e-4) return "must be a whole number";
+  return "";
+}
+
+// A value no one can have is refused; one the data has never seen is allowed, with a note.
 function checkRange(e) {
   const inp = e.target, row = inp.closest(".you-row");
   const warn = row.querySelector(".fwarn");
   const v = inp.value === "" ? null : Number(inp.value);
   const min = +row.dataset.min, max = +row.dataset.max;
   const isInt = row.dataset.int === "true";
+  const reason = v == null || isNaN(v) ? "" : impossibleReason(v, row);
+  row.classList.toggle("bad", !!reason);
+  inp.setAttribute("aria-invalid", String(!!reason));
   if (v == null || isNaN(v)) { warn.textContent = ""; row.classList.remove("out"); return; }
-  if (v < min || v > max) {
-    warn.textContent = `outside the data (${fmtVal(min, isInt)}–${fmtVal(max, isInt)})`;
+  if (reason) {
+    warn.textContent = `Not possible: ${reason}`;
+    row.classList.remove("out");
+  } else if (v < min || v > max) {
+    warn.textContent = `Outside the data (${fmtVal(min, isInt)}–${fmtVal(max, isInt)}): ` +
+      `the models haven’t seen values like this`;
     row.classList.add("out");
   } else { warn.textContent = ""; row.classList.remove("out"); }
 }
@@ -1409,10 +1509,11 @@ function updatePanel(scene) {
   renderDrivers(scene);
   renderRecommend(scene);
   renderWhatif(scene);
+  const q = scene.query, you = handoff(scene);
   el("compare-typical").href = `/compare.html?dataset=${encodeURIComponent(state.dataset)}` +
-    `&you=${encodeYou(personValues(scene))}`;
-  const q = scene.query, who = `dataset=${encodeURIComponent(state.dataset)}&` +
-    (q.custom ? `you=${encodeYou(personValues(scene))}` : `query=${q.id}`);
+    `&you=${you}`;
+  const who = `dataset=${encodeURIComponent(state.dataset)}&` +
+    (q.custom ? `you=${you}` : `query=${q.id}`);
   el("details-link").href = `/details.html?${who}`;
   el("map-link").href = `/app.html?${who}`;
   renderWays(scene);
@@ -1466,7 +1567,7 @@ async function drawScene() {
     resp = await fetch("/api/scene", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dataset: state.dataset, custom: state.custom, rules: state.rules,
-                             view: state.view, lens: state.lens }),
+                             view: state.view, lens: state.lens, from_map: state.fromMap }),
     });
   } else {
     const url = new URL("/api/scene", location.origin);
@@ -1480,6 +1581,15 @@ async function drawScene() {
   const scene = await resp.json();
   Object.values(plotDivs).forEach((d) => d.classList.remove("loading"));
   el("busy").textContent = "";
+  if (scene.invalid) {                    // values no real person could have
+    el("busy").textContent = scene.error;
+    if (state.custom && formDataset === state.dataset) {
+      restoreForm();
+      const first = el("you-fields").querySelector(".you-row.bad input");
+      if (first) first.focus();
+    }
+    return;
+  }
   if (scene.error) { el("busy").textContent = "Something went wrong: " + scene.error; return; }
   lastScene = scene;
 
@@ -1487,6 +1597,7 @@ async function drawScene() {
     state.custom = scene.decoded.values;
     state.point = null;
     state.plane = null;
+    state.fromMap = true;
   }
   if (!scene.query.custom) state.query = scene.query.id;
   const rebuilt = formDataset !== state.dataset;
@@ -1602,6 +1713,7 @@ function onClick(div, e) {
     state.custom = null;
     state.point = null;
     state.plane = null;
+    state.fromMap = false;
   } else {
     const fl = div._fullLayout, which = div === plotDivs.linear ? "linear" : "mlp";
     state.point = [fl.xaxis.p2d(at[0]), fl.yaxis.p2d(at[1])];
@@ -1645,10 +1757,10 @@ function offMapNote(scene) {
   const issues = [];
   for (const which of visiblePanels()) {
     const m = scene.panels[which].metrics, marks = [];
-    if (m.star_drawn_right === false) marks.push("★ you");
+    if (m.star_drawn_right === false) marks.push("★ this person");
     if (!m.pred_bad) { if (marks.length) issues.push([which, marks]); continue; }
     if (quickOk(scene, which) && m.quick_drawn_right === false) marks.push("✕ smallest change");
-    if (safeOk(scene, which) && m.safe_drawn_right === false) marks.push("▪ safest change");
+    if (safeOk(scene, which) && m.safe_drawn_right === false) marks.push("▪ holds across models");
     if (marks.length) issues.push([which, marks]);
   }
   if (!issues.length) return "";
@@ -1678,7 +1790,7 @@ function showMapNote(scene) {
 el("dataset").addEventListener("change", async (e) => {
   state.dataset = e.target.value;
   loadRules();
-  state.query = null; state.custom = null; state.point = null;
+  state.query = null; state.custom = null; state.point = null; state.fromMap = false;
   el("save-msg").textContent = "";
   closeSavePanel();
   await refresh();
@@ -1686,8 +1798,16 @@ el("dataset").addEventListener("change", async (e) => {
 });
 el("you-form").addEventListener("submit", (e) => {
   e.preventDefault();
+  const bad = el("you-fields").querySelector(".you-row.bad input");
+  if (bad) {
+    el("save-msg").textContent = "Fix the values marked “not possible” first.";
+    bad.focus();
+    return;
+  }
+  el("save-msg").textContent = "";
   state.custom = readForm();
   state.point = null;
+  state.fromMap = false;
   refresh();
 });
 el("you-typical").addEventListener("click", () => {
@@ -1706,6 +1826,7 @@ el("you-clear").addEventListener("click", () => {
   for (const sel of el("you-fields").querySelectorAll("select.you-group")) sel.value = "";
   state.custom = null;
   state.point = null;
+  state.fromMap = false;
   refresh();
 });
 
@@ -1878,6 +1999,7 @@ el("saved-items").addEventListener("click", async (e) => {
   if (b.dataset.load != null) {
     state.custom = s.values;
     state.point = null;
+    state.fromMap = false;
     restoreForm();
     el("save-msg").textContent = `Loaded “${s.name}”.`;
     refresh();
@@ -1902,13 +2024,22 @@ async function init() {
   const qs = new URLSearchParams(location.search);
   if (qs.has("dataset")) state.dataset = qs.get("dataset");
   if (qs.has("query") && isFinite(Number(qs.get("query")))) state.query = Number(qs.get("query"));
-  if (qs.has("you")) {
+  if (qs.get("you") === "tab") {
+    const h = takeHandoff();
+    if (h && h.dataset === state.dataset) { state.custom = h.values; state.fromMap = !!h.fromMap; }
+  } else if (qs.has("you")) {
+    // An older link with the values in it: use them, then take them out of the address.
     state.custom = {};
     for (const kv of qs.get("you").split(",")) {
       const i = kv.indexOf(":");
       if (i > 0 && isFinite(Number(kv.slice(i + 1))))
         state.custom[kv.slice(0, i)] = Number(kv.slice(i + 1));
     }
+    qs.set("you", "tab");
+    try {
+      sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({ dataset: state.dataset, values: state.custom }));
+      history.replaceState(null, "", `${location.pathname}?${qs}`);
+    } catch (e) {}
   }
 
   // Back from signing in to save: restore what was typed, then choose what to keep.
@@ -1919,6 +2050,7 @@ async function init() {
   }
 
   loadRules();
+  checkSummaryAI();
   const meta = await (await fetch("/api/datasets")).json();
   el("dataset").innerHTML = meta.datasets
     .map((d) => `<option value="${G.esc(d.key)}">${G.esc(G.topicName(d.key, d.label))}</option>`)
@@ -1932,6 +2064,7 @@ async function init() {
   if (toOpen) {
     state.custom = toOpen.values;
     state.point = null;
+    state.fromMap = false;
     restoreForm();
     el("save-msg").textContent = `Opened “${toOpen.name}”.`;
     await refresh();
@@ -1953,11 +2086,13 @@ el("tip-linear").innerHTML = G.tip("A straight-line model. Easy to explain.");
 el("tip-mlp").innerHTML = G.tip("A small neural network. Can bend around the data.");
 el("compare-tip").innerHTML = G.tip("Where each number sits among everyone in the data. " +
   "Most important first. A lock means it can’t be changed.", "right");
-el("reco-tip").innerHTML = G.tip("The smallest changes that flip the result for every " +
-  "model that fits the data about as well. Things you can’t change are never suggested.");
+el("reco-tip").innerHTML = G.tip("Changes to the numbers that would flip the models’ " +
+  "prediction. Things you can’t change are never suggested. They show how the models " +
+  "behave; they are not advice and don’t say what would happen in real life.");
 el("reco-kind-tip").innerHTML = G.tip("Smallest: the least total change for this model. " +
-  "Fewest changes: touches as few values as possible. Safest: works for every model that " +
-  "fits the data about as well.");
+  "Fewest changes: touches as few values as possible. Holds across models: flips every model " +
+  "that fits the data about as well. That is a property of the models, not a real-world " +
+  "guarantee.");
 el("whatif-tip").innerHTML = G.tip("Drag a value. The chance updates and a hollow star " +
   "shows where you would move on the map.");
 el("plan-tip").innerHTML = G.tip("Tick the changes you’ll make. Save the plan to your " +

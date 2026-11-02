@@ -168,6 +168,15 @@ def _auth_route(method, p, q, body, headers):
 MAX_PEOPLE = 60
 
 
+def _impossible_reply(gs, ds, custom):
+    """A 400 reply for entered values no real person could have, or None."""
+    bad = gs.impossible(ds, custom)
+    if not bad:
+        return None
+    what = "; ".join(f"{b['label']} {b['reason']} (entered {b['value']:g})" for b in bad)
+    return 400, {"error": f"Not a possible value: {what}.", "invalid": bad}
+
+
 def _clean_custom(custom):
     """({feature: float or None}, None), or (None, error message)."""
     if not isinstance(custom, dict) or len(custom) > 500:
@@ -252,6 +261,12 @@ def _people_route(body):
         if err:
             return 400, {"error": err}
         customs.append(clean)
+    # A spot picked on the map can stand for values nobody has; those are allowed.
+    if data.get("from_map") is not True:
+        for clean in customs:
+            refused = _impossible_reply(gs, ds, clean)
+            if refused:
+                return refused
     lens = data.get("lens") or None
     if lens is not None and lens not in gs.LENSES:
         return 400, {"error": f"'lens' must be one of {', '.join(gs.LENSES)}"}
@@ -310,6 +325,9 @@ def route(method, path, query, body, headers=None):
 
     if method == "POST" and p.endswith("/summarize"):
         return _summarize_route(body)
+
+    if method == "GET" and p.endswith("/summarize"):
+        return 200, {"ai": summarize.available(), "model": summarize.MODEL_ID}
 
     gs = _service()
 
@@ -378,15 +396,25 @@ def route(method, path, query, body, headers=None):
             except Exception as exc:
                 return 500, {"error": str(exc)}
             scene["query"]["from_map"] = True
+            scene["query"]["impossible"] = [b["label"] for b in gs.impossible(ds, values)]
             scene["decoded"] = {"values": values, "outside": outside}
             return 200, scene
         clean, err = _clean_custom(data.get("custom"))
         if err:
             return 400, {"error": err}
+        from_map = data.get("from_map") is True
+        if not from_map:
+            refused = _impossible_reply(gs, ds, clean)
+            if refused:
+                return refused
         try:
-            return 200, gs.scene(ds, custom=clean, constraints=rules, view=view, lens=lens)
+            scene = gs.scene(ds, custom=clean, constraints=rules, view=view, lens=lens)
         except Exception as exc:
             return 500, {"error": str(exc)}
+        if from_map:
+            scene["query"]["from_map"] = True
+            scene["query"]["impossible"] = [b["label"] for b in gs.impossible(ds, clean)]
+        return 200, scene
 
     return 404, {"error": "not found"}
 
@@ -426,7 +454,7 @@ class handler(BaseHTTPRequestHandler):
         if u.path in _STATIC:
             self._serve_static(u.path)
             return
-        if (p.endswith(("/datasets", "/scene", "/health", "/lens-report")) or _is_auth(p)
+        if (p.endswith(("/datasets", "/scene", "/health", "/lens-report", "/summarize")) or _is_auth(p)
                 or "__route=" in u.query):
             self._reply(route("GET", u.path, u.query, None, self.headers))
             return

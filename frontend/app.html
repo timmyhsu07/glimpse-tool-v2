@@ -69,7 +69,7 @@
           <button type="button" data-view="mlp">Flexible</button>
           <button type="button" data-view="both">Both</button>
         </div>
-        <button type="button" class="tool-btn" id="find-me">Find me</button>
+        <button type="button" class="tool-btn" id="find-me" aria-label="Center the map on this person">Center on ★</button>
         <span class="zoom-group" role="group" aria-label="Zoom">
           <button type="button" class="tool-btn zoom-btn" id="zoom-out" aria-label="Zoom out">−</button>
           <button type="button" class="tool-btn zoom-btn" id="zoom-in" aria-label="Zoom in">+</button>
@@ -104,6 +104,8 @@
         <div id="verdict-who" class="sub"></div>
         <div id="verdict-headline"></div>
         <div id="verdict-models"></div>
+      <p id="verdict-inputs" class="sub verdict-note" hidden></p>
+      <p id="verdict-limits" class="sub verdict-note"></p>
       </div>
       <section id="ways" aria-labelledby="ways-h">
         <h2 id="ways-h">Three ways to change it <span id="ways-tip"></span></h2>
@@ -112,6 +114,8 @@
           <button type="button" data-model="mlp" aria-pressed="false">Flexible</button>
         </div>
         <ol id="ways-list"></ol>
+        <p class="sub ways-note">Changes to the numbers that would flip the model, not advice.
+          Some values aren’t choices at all.</p>
       </section>
       <a id="details-link" class="btn-primary details-btn" href="/details.html">See all details →</a>
       <p class="sub details-sub">How you compare, what drove it, what-if, your plan, and a summary.</p>
@@ -127,7 +131,9 @@
 
   <details id="you-details">
     <summary>Enter your numbers</summary>
-    <p class="sub">Blanks use typical values. Nothing is stored unless you save.</p>
+    <p class="sub">Blanks use typical values. Your numbers are sent to the GLIMPSE server only
+      to work out the result and are not kept there. They stay out of the page address and are
+      forgotten when you close this tab, unless you sign in and save them.</p>
     <div id="saved-list" hidden>
       <h3>Your saves</h3>
       <ul id="saved-items"></ul>

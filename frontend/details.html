@@ -50,6 +50,8 @@
       <div id="verdict-who" class="sub"></div>
       <div id="verdict-headline"></div>
       <div id="verdict-models"></div>
+      <p id="verdict-inputs" class="sub verdict-note" hidden></p>
+      <p id="verdict-limits" class="sub verdict-note"></p>
       <div id="summary-row">
         <div id="ask-log" aria-live="polite" hidden></div>
         <form id="ask-form" class="ask-form">
@@ -58,6 +60,7 @@
           <button type="submit" id="ask-btn" class="tool-btn">Ask</button>
           <button type="button" id="summarize-btn" class="tool-btn">Summarize</button>
         </form>
+        <p id="ask-note" class="sub"></p>
       </div>
     </div>
 
@@ -98,9 +101,12 @@
         Fewest changes</button>
       <button type="button" role="tab" id="tab-safe" data-kind="safe" aria-selected="false">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V6z"/></svg>
-        Safest change</button>
+        Holds across models</button>
       <span id="reco-kind-tip"></span>
     </div>
+    <p class="sub reco-note">These are changes to the numbers the models see that would flip
+      their prediction. They show how the models behave. They are not advice, and they don’t
+      say what would happen in real life. Some values aren’t choices at all.</p>
     <div id="reco-lists"></div>
 
     <div class="reco-tools">
@@ -144,7 +150,7 @@
     <table id="dist">
       <tr><th>change</th><th>simple</th><th>flexible</th></tr>
       <tr><td>Smallest (this model only)</td><td id="d-std-lin">—</td><td id="d-std-mlp">—</td></tr>
-      <tr><td>Safe (every good model)</td><td id="d-ell-lin">—</td><td id="d-ell-mlp">—</td></tr>
+      <tr><td>Holds across models (every good model)</td><td id="d-ell-lin">—</td><td id="d-ell-mlp">—</td></tr>
     </table>
 
     <h3>Raw metrics</h3>

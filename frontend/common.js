@@ -5,10 +5,16 @@
 
   const TOPICS = {
     pima: { name: "Diabetes", line: "Would a model flag diabetes?",
+            source: "a public dataset of 768 women of Pima Indian heritage, aged 21 and over",
+            limit: "It is not a diagnosis or medical advice.",
             icon: '<path d="M12 3c3.5 4.6 6 8 6 11a6 6 0 0 1-12 0c0-3 2.5-6.4 6-11z"/>' },
     taiwan: { name: "Credit card", line: "Would a bank expect you to miss payments?",
+             source: "a public dataset of 30,000 credit card holders in Taiwan from 2005",
+             limit: "It is not a credit decision or financial advice.",
              icon: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h4"/>' },
     cancer: { name: "Breast cancer", line: "Would a model call a tumor malignant?",
+              source: "a public dataset of 569 breast tumor samples measured from images (University of Wisconsin)",
+              limit: "It is not a diagnosis or medical advice.",
               icon: '<path d="M12 3c-2 0-3.5 1.5-3.5 3.5 0 2 1.5 4 3.5 6.5 2-2.5 3.5-4.5 3.5-6.5C15.5 4.5 14 3 12 3z"/><path d="M10.5 11 6.5 21M13.5 11l4 10"/>' },
   };
   const topicName = (key, fallback) => (TOPICS[key] ? TOPICS[key].name : fallback || key);

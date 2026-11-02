@@ -68,6 +68,18 @@ class VercelConfigTests(unittest.TestCase):
             menus.add(" ".join(re.findall(r'href="([^"]+)"', nav)))
         self.assertEqual(menus, {"/ /app.html /tutorial.html /compare.html"})
 
+    def test_entered_values_stay_out_of_links(self):
+        app = (ROOT / "frontend" / "app.js").read_text()
+        self.assertNotIn("encodeYou", app)
+        self.assertIn("sessionStorage.setItem(HANDOFF_KEY", app)
+
+    def test_results_say_whose_data_and_what_it_means(self):
+        for page in ("app.html", "details.html"):
+            html = (ROOT / "frontend" / page).read_text()
+            self.assertIn('id="verdict-limits"', html)
+            self.assertNotIn("Safest change", html)
+        self.assertNotIn(">Find me<", (ROOT / "frontend" / "app.html").read_text())
+
     def test_entry_point_exposes_the_backend_handler(self):
         entry = _load_entry()
         self.assertIs(entry.handler, entry._backend.handler)

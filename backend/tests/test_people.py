@@ -49,6 +49,60 @@ class PeopleTests(unittest.TestCase):
             self.assertIn("cf_real", row[key])
 
 
+def scene(body):
+    code, obj, *_ = index.route("POST", "/api/scene", "", json.dumps(body), {})
+    return code, obj
+
+
+class ImpossibleValueTests(unittest.TestCase):
+    def test_negative_glucose_gets_no_prediction(self):
+        code, obj = scene({"dataset": "pima", "custom": {"Glucose": -20}})
+        self.assertEqual(code, 400)
+        self.assertEqual(obj["invalid"][0]["name"], "Glucose")
+        self.assertIn("more than 0", obj["error"])
+        self.assertEqual(people({"dataset": "pima", "people": [{"Glucose": -20}]})[0], 400)
+
+    def test_zero_means_not_measured_so_it_is_refused(self):
+        self.assertEqual(scene({"dataset": "pima", "custom": {"BMI": 0}})[0], 400)
+        self.assertEqual(scene({"dataset": "pima", "custom": {"Pregnancies": 0}})[0], 200)
+
+    def test_counts_are_whole(self):
+        code, obj = scene({"dataset": "pima", "custom": {"Pregnancies": 1.5}})
+        self.assertEqual(code, 400)
+        self.assertIn("whole number", obj["error"])
+
+    def test_values_read_back_from_the_data_pass(self):
+        # typical values come back with float32 noise, e.g. 2.9999998 pregnancies
+        code, _ = scene({"dataset": "pima", "custom": {"Pregnancies": 3.0000001, "Age": -1e-7 + 30}})
+        self.assertEqual(code, 200)
+        _, typical = scene({"dataset": "pima", "custom": {}})
+        values = {r["name"]: r["x0_real"] for r in typical["deltas"]}
+        self.assertEqual(scene({"dataset": "pima", "custom": values})[0], 200)
+
+    def test_negative_tumor_measure_is_refused(self):
+        self.assertEqual(scene({"dataset": "cancer", "custom": {"mean radius": -3}})[0], 400)
+
+    def test_unusual_but_possible_value_is_flagged_not_refused(self):
+        code, obj = scene({"dataset": "pima", "custom": {"Glucose": 250}})
+        self.assertEqual(code, 200)
+        self.assertEqual(obj["query"]["outside"], ["Glucose"])
+
+    def test_a_map_spot_may_stand_for_values_nobody_has(self):
+        code, obj = scene({"dataset": "pima", "custom": {"Glucose": -20}, "from_map": True})
+        self.assertEqual(code, 200)
+        self.assertTrue(obj["query"]["from_map"])
+        self.assertEqual(obj["query"]["impossible"], ["Glucose"])
+        code, _ = people({"dataset": "pima", "people": [{"Glucose": -20}], "from_map": True})
+        self.assertEqual(code, 200)
+
+    def test_form_gets_the_same_rules(self):
+        _, obj = scene({"dataset": "pima", "custom": {}})
+        f = {x["name"]: x for x in obj["features"]}
+        self.assertEqual((f["Glucose"]["possible_min"], f["Glucose"]["above_min"]), (0.0, True))
+        self.assertTrue(f["Pregnancies"]["whole"])
+        self.assertFalse(f["Age"]["above_min"])
+
+
 class SaveListTests(AuthTests):
     def test_rename_and_list_every_topic(self):
         ck = session_cookie(self.register()[2])

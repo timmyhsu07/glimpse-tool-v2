@@ -55,6 +55,13 @@ class SummarizeRouteTests(unittest.TestCase):
 
 
 class SummarizeTextTests(unittest.TestCase):
+    """With the model installed (mocked)."""
+
+    def setUp(self):
+        patch = mock.patch.object(summarize, "available", return_value=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def test_keeps_a_faithful_two_sentence_draft(self):
         source = ("The simple model says diabetes, with a 72% chance of diabetes. "
                   "Other good models range from 61% to 84%.")
@@ -97,6 +104,45 @@ class SummarizeTextTests(unittest.TestCase):
             out = summarize.summarize(source, "How common is this?")
         self.assertIsNone(out["model"])
         self.assertIn("can’t be answered", out["summary"])
+
+
+class NoModelTests(unittest.TestCase):
+    """The hosted site has no model: summaries and answers still work."""
+    BRIEF = ("Sample person 506. The simple model predicts Diabetes, with a 73% chance of "
+             "Diabetes. Other good models range from 61% to 84%. The good models agree. "
+             "The values that push the simple model most are Glucose, BMI.")
+
+    def setUp(self):
+        patch = mock.patch.object(summarize, "available", return_value=False)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_summary_is_the_pages_own_wording(self):
+        code, obj = post({"text": self.BRIEF})
+        self.assertEqual(code, 200)
+        self.assertEqual((obj["summary"], obj["source"]), (self.BRIEF, "page"))
+
+    def test_answers_a_question_about_the_range(self):
+        code, obj = post({"text": self.BRIEF, "question": "What does the uncertainty range mean?"})
+        self.assertEqual((code, obj["source"]), (200, "built-in"))
+        self.assertIn("fit the data about as well", obj["summary"])
+        self.assertIn("61% to 84%", obj["summary"])            # quotes this result
+
+    def test_answers_what_drove_it(self):
+        out = summarize.explain(self.BRIEF, "Why did it say that?")
+        self.assertIn("Glucose, BMI", out)
+
+    def test_advice_questions_get_the_not_advice_answer(self):
+        out = summarize.explain(self.BRIEF, "Should I take insulin to lower the chance?")
+        self.assertIn("not a diagnosis", out)
+
+    def test_off_topic_question_is_declined(self):
+        out = summarize.explain(self.BRIEF, "What is the capital of France?")
+        self.assertIn("can’t be answered", out)
+
+    def test_page_can_tell_before_asking(self):
+        code, obj, *_ = index.route("GET", "/api/summarize", "", None, {})
+        self.assertEqual((code, obj["ai"]), (200, False))
 
 
 if __name__ == "__main__":

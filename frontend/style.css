@@ -984,3 +984,17 @@ body[data-page="compare"] :is(button, input, select) {
 
 /* Legend swatch for density by class: an outlined ring in the class colour */
 .sw.ring { background: transparent; border: 2px solid currentColor; border-radius: 50%; }
+
+/* Result meaning and entry checks */
+.vlead { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.03em; }
+.verdict-note { margin: 0.45rem 0 0; font-size: 0.8rem; line-height: 1.4; }
+.verdict-note .warn, #verdict-inputs .warn { color: var(--bad); }
+.ways-note, .reco-note { font-size: 0.8rem; line-height: 1.4; margin: 0.35rem 0 0.5rem; }
+.you-row.out .fwarn { color: #7a5a00; }
+:root[data-theme="dark"] .you-row.out .fwarn { color: #ffd166; }
+.you-row.bad input { border-color: var(--bad); border-width: 2px; }
+.you-row.bad .fwarn { font-weight: 700; }
+#ask-note { font-size: 0.78rem; margin: 0.3rem 0 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
