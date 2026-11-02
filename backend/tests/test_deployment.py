@@ -77,7 +77,7 @@ class VercelConfigTests(unittest.TestCase):
         for page in ("app.html", "details.html"):
             html = (ROOT / "frontend" / page).read_text()
             self.assertIn('id="verdict-limits"', html)
-            self.assertNotIn("Safest change", html)
+        self.assertIn("Safest change (holds across models)", (ROOT / "frontend" / "details.html").read_text())
         self.assertNotIn(">Find me<", (ROOT / "frontend" / "app.html").read_text())
 
     def test_entry_point_exposes_the_backend_handler(self):

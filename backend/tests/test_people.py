@@ -59,11 +59,12 @@ class ImpossibleValueTests(unittest.TestCase):
         code, obj = scene({"dataset": "pima", "custom": {"Glucose": -20}})
         self.assertEqual(code, 400)
         self.assertEqual(obj["invalid"][0]["name"], "Glucose")
-        self.assertIn("more than 0", obj["error"])
+        self.assertIn("below 10", obj["error"])
         self.assertEqual(people({"dataset": "pima", "people": [{"Glucose": -20}]})[0], 400)
 
     def test_zero_means_not_measured_so_it_is_refused(self):
         self.assertEqual(scene({"dataset": "pima", "custom": {"BMI": 0}})[0], 400)
+        self.assertEqual(scene({"dataset": "pima", "custom": {"Insulin": 0}})[0], 400)
         self.assertEqual(scene({"dataset": "pima", "custom": {"Pregnancies": 0}})[0], 200)
 
     def test_counts_are_whole(self):
@@ -79,8 +80,28 @@ class ImpossibleValueTests(unittest.TestCase):
         values = {r["name"]: r["x0_real"] for r in typical["deltas"]}
         self.assertEqual(scene({"dataset": "pima", "custom": values})[0], 200)
 
-    def test_negative_tumor_measure_is_refused(self):
-        self.assertEqual(scene({"dataset": "cancer", "custom": {"mean radius": -3}})[0], 400)
+    def test_values_past_what_a_living_person_has_are_refused(self):
+        for name, v in (("Glucose", 5000), ("Glucose", 5), ("BloodPressure", 400), ("BMI", 300),
+                        ("Age", 130), ("Pregnancies", 40)):
+            code, obj = scene({"dataset": "pima", "custom": {name: v}})
+            self.assertEqual(code, 400, (name, v))
+            self.assertEqual(obj["invalid"][0]["name"], name)
+        self.assertIn("above 3000", scene({"dataset": "pima", "custom": {"Glucose": 5000}})[1]["error"])
+
+    def test_every_real_row_passes(self):
+        gs = index._service()
+        for ds in ("pima", "cancer"):
+            scene({"dataset": ds, "custom": {}})
+            m = gs.cf_core._MODELS[(ds, gs.EPS)]
+            names = [f["name"] for f in m["features"]]
+            for row in m["data"].to_real(m["data"].X):
+                custom = {str(n): float(v) for n, v in zip(names, row)}
+                self.assertEqual(gs.impossible(ds, custom), [], ds)
+
+    def test_tumor_measures_far_outside_the_data_are_refused(self):
+        for v in (-3, 1, 1000):
+            self.assertEqual(scene({"dataset": "cancer", "custom": {"mean radius": v}})[0], 400, v)
+        self.assertEqual(scene({"dataset": "cancer", "custom": {"mean radius": 40}})[0], 200)
 
     def test_unusual_but_possible_value_is_flagged_not_refused(self):
         code, obj = scene({"dataset": "pima", "custom": {"Glucose": 250}})
@@ -98,7 +119,8 @@ class ImpossibleValueTests(unittest.TestCase):
     def test_form_gets_the_same_rules(self):
         _, obj = scene({"dataset": "pima", "custom": {}})
         f = {x["name"]: x for x in obj["features"]}
-        self.assertEqual((f["Glucose"]["possible_min"], f["Glucose"]["above_min"]), (0.0, True))
+        self.assertEqual((f["Glucose"]["possible_min"], f["Glucose"]["possible_max"]), (10.0, 3000.0))
+        self.assertTrue(f["Insulin"]["above_min"])
         self.assertTrue(f["Pregnancies"]["whole"])
         self.assertFalse(f["Age"]["above_min"])
 

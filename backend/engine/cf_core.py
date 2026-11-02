@@ -39,11 +39,30 @@ MONOTONE = {
     "taiwan": {"x5": "up"},                      # age
 }
 
+# The range a living person can have, wider than the data on purpose: a value outside
+# it is refused, one inside it but outside the data only gets a warning.
+LIMITS = {
+    "pima": {
+        "Pregnancies": (0, 30),
+        "Glucose": (10, 3000),             # mg/dL, 2 hours into a glucose test
+        "BloodPressure": (10, 300),        # diastolic, mm Hg
+        "SkinThickness": (1, 150),         # triceps skin fold, mm
+        "Insulin": (0, 5000),              # µU/mL
+        "BMI": (6, 260),
+        "DiabetesPedigreeFunction": (0, 10),
+        "Age": (0, 122),
+    },
+}
+
 # Values that must be above zero, not just at least zero. In Pima a stored 0 means
 # "not measured", so nobody really has it.
 POSITIVE = {
-    "pima": {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"},
+    "pima": {"Insulin"},
 }
+
+# Without a known limit, values this many times past the data's largest (or below its
+# smallest) are refused.
+FAR_BEYOND = 3
 
 _MODELS = {}
 _LENSES = {}
@@ -120,14 +139,27 @@ def _actions(dataset_key, m):
 
 def _possible(dataset_key, f):
     """The values a real person can have, as opposed to the ones seen in the data:
-    nothing negative when the data has no negatives, percentages up to 100, whole
-    counts, and 0 or 1 for a one-hot column."""
+    the LIMITS range when there is one, else nothing negative when the data has no
+    negatives, percentages up to 100, nothing far outside the data, whole counts,
+    and 0 or 1 for a one-hot column."""
     if f.get("group"):
         return {"possible_min": 0.0, "possible_max": 1.0, "above_min": False, "whole": True}
-    return {"possible_min": 0.0 if f["min"] >= -1e-6 else None,
-            "possible_max": 100.0 if f.get("unit") == "%" else None,
-            "above_min": f["name"] in POSITIVE.get(dataset_key, ()),
-            "whole": f.get("unit") in ("count", "code")}
+    whole = f.get("unit") in ("count", "code")
+    lim = LIMITS.get(dataset_key, {}).get(f["name"])
+    if lim:
+        lo, hi = map(float, lim)
+    else:
+        lo = None if f["min"] < -1e-6 else _round(f["min"] / FAR_BEYOND, up=False) if f["min"] > 1e-6 else 0.0
+        hi = 100.0 if f.get("unit") == "%" else _round(FAR_BEYOND * f["max"]) if f["max"] > 0 else None
+    return {"possible_min": lo, "possible_max": hi,
+            "above_min": f["name"] in POSITIVE.get(dataset_key, ()), "whole": whole}
+
+
+def _round(x, up=True):
+    """x rounded outward to two significant figures, so the limit reads cleanly."""
+    step = 10.0 ** (np.floor(np.log10(x)) - 1)
+    n = np.ceil(x / step - 1e-9) if up else np.floor(x / step + 1e-9)
+    return round(float(n * step), 10)
 
 
 def impossible_values(dataset_key, custom, eps=0.03):

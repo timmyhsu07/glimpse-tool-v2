@@ -155,7 +155,7 @@ const kindOk = (scene, which, kind) =>
   ({ safe: safeOk, sparse: sparseOk }[kind] || quickOk)(scene, which);
 // The per-value column for a kind: "linear" (safe), "linear_quick", "linear_sparse".
 const kindKey = (which, kind) => (kind === "safe" ? which : `${which}_${kind}`);
-const KIND_NAME = { quick: "Smallest change", sparse: "Fewest changes", safe: "Holds across models" };
+const KIND_NAME = { quick: "Smallest change", sparse: "Fewest changes", safe: "Safest change (holds across models)" };
 // Where the map's arrow points: the safe change if there is one, else the quick one,
 // else nowhere.
 const arrowTarget = (scene, which) =>
@@ -481,12 +481,12 @@ function renderLegend(scene) {
     `<li><span class="sw line" style="background:${P.line}"></span> Model’s line</li>`,
     `<li><span class="sw line" style="background:${P.fan}"></span> Other good models</li>`,
     `<li><span class="sw line dash" style="color:${P.worst}"></span> Strictest model (dashed)</li>`,
-    `<li>★ This person · ✕ Smallest change · ◆ Fewest changes · ▪ Holds across models</li>`,
+    `<li>★ This person · ✕ Smallest change · ◆ Fewest changes · ▪ Safest change (holds across models)</li>`,
     `<li>${G.tip("Background: the simple model’s chance of " + b + ". " +
       "Line: where it flips. Other good models: models that fit the data about as well. " +
       "Strictest: the good model hardest to convince at the ▪ change (the ▪ sits just " +
       "past its line). Smallest change: least total change for this " +
-      "model. Fewest changes: touches as few values as possible. Holds across models: " +
+      "model. Fewest changes: touches as few values as possible. Safest change (holds across models): " +
       "flips every good model. All of these are changes to the numbers the models see, " +
       "not advice.")}</li>`,
     `<li><a href="/tutorial.html#map">How to read the map</a></li>`,
@@ -874,7 +874,7 @@ el("ways-toggle").addEventListener("click", (e) => {
   renderWays(lastScene);
 });
 el("ways-tip").innerHTML = G.tip("Smallest: the least total change. Fewest changes: touches as " +
-  "few values as possible. Holds across models: flips every model that fits the data about as " +
+  "few values as possible. Safest change (holds across models): flips every model that fits the data about as " +
   "well. The % is the model's chance after the change. Values you can't change are never " +
   "touched. These describe the models, not what would happen in real life.", "right");
 
@@ -1153,7 +1153,7 @@ function renderPlan(scene) {
       <span><b>${G.esc(c.label)}</b> ${G.esc(c.before)} → <b>${G.esc(c.after)}</b>
       ${c.unit ? G.esc(c.unit) : ""}</span></label></li>`;
   }).join("") : `<li class="sub">${noSafe ? (recoKind === "safe"
-    ? "No change holds across models for the simple model. Switch to Smallest change to plan."
+    ? "No safest change (one that holds across models) for the simple model. Switch to Smallest change to plan."
     : "No realistic change flips the simple model.")
     : "Nothing to plan: already " + G.esc(scene.class_names[0]) + "."}</li>`;
   el("plan-list").dataset.items = JSON.stringify(items);
@@ -1321,8 +1321,8 @@ function renderChanges(scene) {
   el("changes-table").innerHTML =
     `<table class="chg"><thead><tr>` +
     `<th>Value</th><th>Now</th>` +
-    `<th>After, ${KIND_NAME[recoKind].toLowerCase()} (simple)</th>` +
-    `<th>After, ${KIND_NAME[recoKind].toLowerCase()} (flexible)</th>` +
+    `<th>After, ${KIND_NAME[recoKind].split(" (")[0].toLowerCase()} (simple)</th>` +
+    `<th>After, ${KIND_NAME[recoKind].split(" (")[0].toLowerCase()} (flexible)</th>` +
     `</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
@@ -1760,7 +1760,7 @@ function offMapNote(scene) {
     if (m.star_drawn_right === false) marks.push("★ this person");
     if (!m.pred_bad) { if (marks.length) issues.push([which, marks]); continue; }
     if (quickOk(scene, which) && m.quick_drawn_right === false) marks.push("✕ smallest change");
-    if (safeOk(scene, which) && m.safe_drawn_right === false) marks.push("▪ holds across models");
+    if (safeOk(scene, which) && m.safe_drawn_right === false) marks.push("▪ safest change");
     if (marks.length) issues.push([which, marks]);
   }
   if (!issues.length) return "";
@@ -2090,7 +2090,7 @@ el("reco-tip").innerHTML = G.tip("Changes to the numbers that would flip the mod
   "prediction. Things you can’t change are never suggested. They show how the models " +
   "behave; they are not advice and don’t say what would happen in real life.");
 el("reco-kind-tip").innerHTML = G.tip("Smallest: the least total change for this model. " +
-  "Fewest changes: touches as few values as possible. Holds across models: flips every model " +
+  "Fewest changes: touches as few values as possible. Safest change (holds across models): flips every model " +
   "that fits the data about as well. That is a property of the models, not a real-world " +
   "guarantee.");
 el("whatif-tip").innerHTML = G.tip("Drag a value. The chance updates and a hollow star " +
