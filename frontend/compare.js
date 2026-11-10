@@ -172,6 +172,9 @@ el("cmp-a").addEventListener("change", render);
 el("cmp-b").addEventListener("change", render);
 el("cmp-topic").addEventListener("change", async (e) => {
   topic = e.target.value;
+  qs.set("dataset", topic);
+  history.replaceState(null, "", `${location.pathname}?${qs}${location.hash}`);
+  el("cmp-add-profile").href = `/app.html?dataset=${encodeURIComponent(topic)}&enter=1`;
   fromLink = null;
   await loadSaves(await G.me);
   fillPickers(...defaultKeys());
@@ -188,6 +191,7 @@ async function init() {
   el("cmp-topic").innerHTML = datasets.map((d) =>
     `<option value="${G.esc(d.key)}">${G.esc(G.topicName(d.key, d.label))}</option>`).join("");
   el("cmp-topic").value = topic;
+  el("cmp-add-profile").href = `/app.html?dataset=${encodeURIComponent(topic)}&enter=1`;
   const user = await G.me;
   await loadSaves(user);
   fillPickers(...defaultKeys());

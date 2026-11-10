@@ -31,6 +31,7 @@ const DISPUTED_SHARE = 0.15;      // "most disputed" = this share with the wides
 let mapView = "both";
 let mapStyle = "density";        // "density" (everyone), "classes" (one per class) or "datapoints"
 let showDisputed = false;
+let selectedProfile = "";
 
 const pct = (v) => (v * 100).toFixed(0) + "%";
 const f3 = (v) => (v == null ? "  n/a" : v.toFixed(3));
@@ -1415,7 +1416,8 @@ function groupHTML(g) {
     opts.push(`<option value="${esc(m.name)}">${esc(m.value_label)}</option>`);
   return `<label class="you-row group-row">
     <span class="fname">${esc(g.label)}${imm}</span>
-    <select class="you-group" data-modal="${esc(modal)}">${opts.join("")}</select>
+    <select class="you-group" aria-label="${esc(g.label)}"
+            data-modal="${esc(modal)}">${opts.join("")}</select>
   </label>`;
 }
 
@@ -1430,7 +1432,14 @@ function buildForm(scene) {
     .map((it) => (it.type === "group" ? groupHTML(it) : fieldHTML(it.f)))
     .join("");
   for (const inp of el("you-fields").querySelectorAll("input"))
-    inp.addEventListener("input", checkRange);
+    inp.addEventListener("input", (event) => {
+      checkRange(event);
+      if (event.isTrusted) selectCustomProfile();
+    });
+  for (const select of el("you-fields").querySelectorAll("select.you-group"))
+    select.addEventListener("change", (event) => {
+      if (event.isTrusted) selectCustomProfile();
+    });
   if (state.custom) restoreForm();
 }
 
@@ -1501,10 +1510,67 @@ function readForm() {
   return custom;
 }
 
+function selectCustomProfile() {
+  selectedProfile = "custom";
+  const select = el("profile-select");
+  if ([...select.options].some((option) => option.value === selectedProfile))
+    select.value = selectedProfile;
+}
+
+function renderChartSummary(scene) {
+  const kinds = mapView === "both" ? ["linear", "mlp"]
+    : [mapView === "mlp" ? "mlp" : "linear"];
+  const [goodName, badName] = scene.class_names;
+  const results = kinds.map((kind) => {
+    const m = scene.panels[kind].metrics;
+    const name = kind === "linear" ? "Simple" : "Flexible";
+    const low = Math.round(m.p_bad_best_x0 * 100);
+    const high = Math.round(m.p_bad_worst_x0 * 100);
+    return `${name} model predicts ${m.pred_bad ? badName : goodName}, with ` +
+      `${Math.round(m.p_bad_erm_x0 * 100)}% chance of ${badName}; other good models ` +
+      `range from ${low}% to ${high}%`;
+  }).join("; ");
+  const image = mapStyle === "datapoints"
+    ? "Dots are people"
+    : mapStyle === "classes"
+      ? "Shading shows where people with each outcome are concentrated"
+      : "Shading shows where people are concentrated";
+  el("chart-summary").textContent = `${results}. ${image}; the star is the selected person. ` +
+    "A cross marks a smallest change, a square a safest change, a solid line the model's " +
+    "boundary, and a dashed line the strictest good model's boundary.";
+}
+
+el("profile-select").addEventListener("change", () => {
+  const value = el("profile-select").value;
+  if (value === "custom") {
+    selectedProfile = value;
+    state.custom = readForm();
+    state.point = null;
+    state.fromMap = false;
+    refresh();
+    return;
+  }
+  const saved = savedEntries.find((entry) => `saved:${entry.id}` === value);
+  if (!saved) return;
+  loadSavedProfile(saved);
+});
+
+function loadSavedProfile(saved) {
+  selectedProfile = `saved:${saved.id}`;
+  el("profile-select").value = selectedProfile;
+  state.custom = saved.values;
+  state.point = null;
+  state.fromMap = false;
+  restoreForm();
+  el("save-msg").textContent = `Loaded “${saved.name}”.`;
+  refresh();
+}
+
 function updatePanel(scene) {
   renderLensNote(scene);
   renderLegend(scene);
   renderVerdict(scene);
+  renderChartSummary(scene);
   renderCompare(scene);
   renderDrivers(scene);
   renderRecommend(scene);
@@ -1598,6 +1664,8 @@ async function drawScene() {
     state.point = null;
     state.plane = null;
     state.fromMap = true;
+    selectedProfile = "";
+    el("profile-select").value = "";
   }
   if (!scene.query.custom) state.query = scene.query.id;
   const rebuilt = formDataset !== state.dataset;
@@ -1640,6 +1708,7 @@ function setMapView(view, redraw) {
   if (redraw && plotsReady && lastScene) {
     redrawPlots(lastScene);
     showMapNote(lastScene);
+    renderChartSummary(lastScene);
     for (const div of Object.values(plotDivs))
       if (!div.closest(".plot-cell").hidden) Plotly.Plots.resize(div);
   }
@@ -1683,8 +1752,10 @@ el("map-toggle").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");
   if (b) setMapView(b.dataset.view, true);
 });
-try { setMapView(localStorage.getItem(VIEW_KEY) || "both", false); }
-catch (e) { setMapView("both", false); }
+try {
+  const savedView = localStorage.getItem(VIEW_KEY);
+  setMapView(["linear", "mlp", "both"].includes(savedView) ? savedView : "both", false);
+} catch (e) { setMapView("both", false); }
 
 // A dot selects that person; anywhere else selects the spot itself, which the
 // server turns back into a person through the lens's exact inverse. Clicks are
@@ -1720,6 +1791,8 @@ function onClick(div, e) {
     state.plane = (lastScene && lastScene.panels[which].plane) || null;
     state.query = null;
   }
+  selectedProfile = "";
+  el("profile-select").value = "";
   refresh();
 }
 
@@ -1789,8 +1862,13 @@ function showMapNote(scene) {
 
 el("dataset").addEventListener("change", async (e) => {
   state.dataset = e.target.value;
+  const url = new URL(location.href);
+  url.searchParams.set("dataset", state.dataset);
+  history.replaceState(null, "", url);
   loadRules();
   state.query = null; state.custom = null; state.point = null; state.fromMap = false;
+  selectedProfile = "";
+  el("profile-select").value = "";
   el("save-msg").textContent = "";
   closeSavePanel();
   await refresh();
@@ -1805,12 +1883,14 @@ el("you-form").addEventListener("submit", (e) => {
     return;
   }
   el("save-msg").textContent = "";
+  selectCustomProfile();
   state.custom = readForm();
   state.point = null;
   state.fromMap = false;
   refresh();
 });
 el("you-typical").addEventListener("click", () => {
+  selectCustomProfile();
   for (const inp of el("you-fields").querySelectorAll("input")) {
     inp.value = inp.closest(".you-row").dataset.median;
     inp.dispatchEvent(new Event("input"));
@@ -1819,6 +1899,7 @@ el("you-typical").addEventListener("click", () => {
     sel.value = sel.dataset.modal || "";
 });
 el("you-clear").addEventListener("click", () => {
+  selectCustomProfile();
   for (const inp of el("you-fields").querySelectorAll("input")) {
     inp.value = "";
     inp.dispatchEvent(new Event("input"));
@@ -1942,6 +2023,20 @@ function summarise(values) {
 
 function renderSaved() {
   el("saved-list").hidden = !savedEntries.length;
+  const select = el("profile-select");
+  const profileOptions = [
+    `<option value="">Choose a profile…</option>`,
+    `<option value="custom">Your entered values</option>`,
+    ...savedEntries.map((saved) =>
+      `<option value="saved:${saved.id}">${esc(saved.name)}</option>`),
+  ];
+  select.innerHTML = profileOptions.join("");
+  if ([...select.options].some((option) => option.value === selectedProfile))
+    select.value = selectedProfile;
+  else {
+    selectedProfile = "";
+    select.value = "";
+  }
   el("saved-items").innerHTML = savedEntries.map((s, i) =>
     `<li><div class="saved-main"><b>${esc(s.name)}</b>` +
     `<span class="sub">${esc(summarise(s.values))}</span></div>` +
@@ -1997,12 +2092,7 @@ el("saved-items").addEventListener("click", async (e) => {
   const s = savedEntries[+(b.dataset.load ?? b.dataset.del)];
   if (!s) return;
   if (b.dataset.load != null) {
-    state.custom = s.values;
-    state.point = null;
-    state.fromMap = false;
-    restoreForm();
-    el("save-msg").textContent = `Loaded “${s.name}”.`;
-    refresh();
+    loadSavedProfile(s);
     return;
   }
   if (!confirm(`Delete “${s.name}”?`)) return;
@@ -2048,6 +2138,7 @@ async function init() {
     state.dataset = pending.dataset;
     state.custom = pending.values;
   }
+  if (state.custom && !state.fromMap) selectedProfile = "custom";
 
   loadRules();
   checkSummaryAI();
@@ -2065,6 +2156,7 @@ async function init() {
     state.custom = toOpen.values;
     state.point = null;
     state.fromMap = false;
+    selectedProfile = `saved:${toOpen.id}`;
     restoreForm();
     el("save-msg").textContent = `Opened “${toOpen.name}”.`;
     await refresh();
@@ -2112,6 +2204,7 @@ function setMapStyle(style, redraw) {
   if (redraw && plotsReady && lastScene) {
     redrawPlots(lastScene);
     renderLegend(lastScene);
+    renderChartSummary(lastScene);
   }
 }
 el("map-style").addEventListener("change", (e) => setMapStyle(e.target.value, true));

@@ -132,6 +132,11 @@ ul.reco li.down .arrow { color: var(--good); }
 #you-details { border: 1px solid var(--line); border-radius: 6px;
   padding: 0.5rem 0.9rem; margin: 0 0 1.2rem; background: var(--panel); }
 #you-details summary { cursor: pointer; font-size: 0.98rem; font-weight: 700; }
+.profile-control { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin: 0.6rem 0; font-size: 0.9rem; font-weight: 600; }
+#profile-select { min-width: min(100%, 16rem);
+  font: inherit; font-weight: normal; padding: 0.45rem 0.65rem; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--input); color: var(--ink); }
 #you-fields {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 0.5rem 1.4rem; margin: 0.6rem 0;
@@ -449,6 +454,8 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 .switch[hidden] { display: none; }
 #old-graph-switch { color: var(--muted); font-weight: 500; }
 #map-note { font-size: 0.88rem; }
+#chart-summary-section h3 { margin: 0.5rem 0 0.1rem; }
+#chart-summary { max-width: 62rem; margin: 0 0 0.4rem; line-height: 1.5; }
 
 /* Verdict: the answer first */
 #verdict-who { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.72rem; }
@@ -702,6 +709,9 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 
 .zoom-group { display: inline-flex; gap: 0.3rem; align-items: center; }
 .zoom-btn { min-width: 2rem; padding: 0.2rem 0.55rem; font-size: 1rem; line-height: 1; }
+#profile-select:focus-visible {
+  outline: 3px solid var(--good); outline-offset: 2px;
+}
 .wi-num.out { border-color: var(--bad); background: var(--field); }
 .wi-val .sub { min-width: 3.4rem; text-align: left; }
 .reco-none { font-size: 0.92rem; margin: 0.2rem 0; }

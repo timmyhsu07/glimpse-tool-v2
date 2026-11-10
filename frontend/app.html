@@ -64,10 +64,10 @@
           <button type="button" data-around="everyone">Everyone</button>
           <button type="button" data-around="around">Around this person</button>
         </div><span id="around-tip"></span>
-        <div id="map-toggle" role="group" aria-label="Which model's map">
-          <button type="button" data-view="linear">Simple</button>
-          <button type="button" data-view="mlp">Flexible</button>
-          <button type="button" data-view="both">Both</button>
+        <div id="map-toggle" role="group" aria-label="Choose a model map">
+          <button type="button" data-view="linear" aria-pressed="false">Simple</button>
+          <button type="button" data-view="mlp" aria-pressed="false">Flexible</button>
+          <button type="button" data-view="both" aria-pressed="true">Both</button>
         </div>
         <button type="button" class="tool-btn" id="find-me" aria-label="Center the map on this person">Center on ★</button>
         <span class="zoom-group" role="group" aria-label="Zoom">
@@ -88,6 +88,10 @@
           <div id="plot-mlp" class="plot"></div>
         </div>
       </div>
+      <section id="chart-summary-section" aria-labelledby="chart-summary-heading">
+        <h3 id="chart-summary-heading">Chart summary</h3>
+        <p id="chart-summary" class="sub" aria-live="polite"></p>
+      </section>
       <p id="map-note" role="status" hidden></p>
       <ul id="legend"></ul>
       <aside id="dev-box" class="wip-card dev-card" aria-label="Developer options">
@@ -104,8 +108,8 @@
         <div id="verdict-who" class="sub"></div>
         <div id="verdict-headline"></div>
         <div id="verdict-models"></div>
-      <p id="verdict-inputs" class="sub verdict-note" hidden></p>
-      <p id="verdict-limits" class="sub verdict-note"></p>
+        <p id="verdict-inputs" class="sub verdict-note" hidden></p>
+        <p id="verdict-limits" class="sub verdict-note"></p>
       </div>
       <section id="ways" aria-labelledby="ways-h">
         <h2 id="ways-h">Three ways to change it <span id="ways-tip"></span></h2>
@@ -134,6 +138,12 @@
     <p class="sub">Blanks use typical values. Your numbers are sent to the GLIMPSE server only
       to work out the result and are not kept there. They stay out of the page address and are
       forgotten when you close this tab, unless you sign in and save them.</p>
+    <label class="profile-control" for="profile-select">Choose a profile
+      <select id="profile-select" aria-label="Choose a saved profile or your entered values">
+        <option value="" selected>Choose a profile…</option>
+        <option value="custom">Your entered values</option>
+      </select>
+    </label>
     <div id="saved-list" hidden>
       <h3>Your saves</h3>
       <ul id="saved-items"></ul>
